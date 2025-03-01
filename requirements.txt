@@ -1,3 +1,7 @@
 openai
 streamlit
 python-dotenv
+fastapi
+uvicorn
+pydantic
+requests
