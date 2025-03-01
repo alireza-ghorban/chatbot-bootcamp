@@ -1,0 +1,10 @@
+[
+    {
+        "role": "user",
+        "content": "hi, where is Montreal?"
+    },
+    {
+        "role": "assistant",
+        "content": "Montreal is located in the province of Quebec, in eastern Canada. It is situated on the Island of Montreal at the confluence of the Saint Lawrence and Ottawa rivers."
+    }
+]
