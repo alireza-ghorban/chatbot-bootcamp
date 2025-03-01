@@ -125,3 +125,5 @@ SELECT * FROM chats WHERE id = 'your_chat_id';
 
 ✅ **Now, you have a fully working PostgreSQL setup for WSL and FastAPI!** 🚀
 
+
+stage-4 done!
