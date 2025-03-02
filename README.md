@@ -1,129 +1,84 @@
-# chatbot-bootcamp
-This is my chatbot project
-we have the stage-1 and stage-2
-fix issues for stage-3:
 
-# 📌 Troubleshooting PostgreSQL Issues in WSL for Bootcamp Students
+<img src='https://s3.amazonaws.com/weclouddata/images/logos/wcd_logo_new_2.png' width='25%'>
 
-**Author:** Alireza  
-**Purpose:** A guide to resolve common PostgreSQL connection issues and database setup when working with **WSL (Ubuntu) and pgAdmin (Windows).**  
+# SDA-bootcamp-project
 
----
+## Stage 4 - RAG Chatbot with Chat History
 
-## **1️⃣ Fixing PostgreSQL Connection Issues**
+### Stage Introduction
 
-### **❌ Problem**
-- When running `uvicorn backend:app --reload`, you see:
-  ```
-  psycopg2.OperationalError: connection to server at "localhost" (127.0.0.1), port 5432 failed: Connection refused
-  ```
-- Or, when trying to log in with `psql`, you get:
-  ```
-  FATAL: password authentication failed for user "postgres"
-  ```
+A **RAG (Retrieval-Augmented Generation) chatbot** using Streamlit and FastAPI. At this stage, we introduce the ability for users to upload PDF files in addition to regular chatting. This allows them to ask questions specifically about the content of those documents.
 
-### **✅ Solution: Ensure PostgreSQL Uses Password Authentication**
+![stage1-4](https://weclouddata.s3.us-east-1.amazonaws.com/cloud/project-stages/stage1-4.png)
 
-#### **Step 1: Edit `pg_hba.conf`**
-Open the authentication configuration file in WSL:
+Under the hood, the system uses a **vector store (Chroma)** to retrieve the most relevant context from uploaded PDFs. This retrieval step enhances the chatbot’s ability to provide accurate, context-aware answers, bridging the gap between simple conversation and document-focused queries.
 
-```sh
-sudo nano /etc/postgresql/14/main/pg_hba.conf
-```
-*(If this path does not exist, replace `14` with your PostgreSQL version.)*
+This enhancement integrates seamlessly with our existing setup—Streamlit for the user interface, FastAPI for business logic, and PostgreSQL for data storage—while laying the foundation for further expansion.
 
-Find these lines at the bottom:
-
-```sql
-local   all             postgres                                peer
-host    all             all             127.0.0.1/32            scram-sha-256
-```
-
-Change **`peer` to `md5`** or **`scram-sha-256`**:
-
-```sql
-local   all             postgres                                md5
-host    all             all             127.0.0.1/32            md5
-```
-
-Save the file (**CTRL + X**, then **Y**, then **Enter**).
-
-#### **Step 2: Restart PostgreSQL**
-```sh
-sudo service postgresql restart
-```
-
-#### **Step 3: Try Logging in Again**
-Now, try logging in to the PostgreSQL database:
-
-```sh
-psql -U postgres -h localhost -d project
-```
-If that does not work, try:
-
-```sh
-psql -U postgres -h 127.0.0.1 -d project
-```
+> **Note:** Some LLM-related concepts introduced in this stage may seem complex. However, our main goal is to get the project running, and fully understanding the LLM integration is **optional**. If you’re interested, feel free to explore the code and additional resources to enhance your project, but don’t worry if you don’t grasp everything right away.
 
 ---
 
-## **2️⃣ Checking the Database and Stored Chats**
+### How to Get Started
 
-### **❌ Problem**
-- You want to verify whether chat history is stored in the `project` database.
+In this stage, we will create a **new** table called `advanced_chats` in the database using the following schema:
 
-### **✅ Solution: Check the Database**
-
-#### **Step 1: Connect to the `project` Database**
-```sh
-psql -U postgres -h localhost -d project
-```
-If successful, you’ll see:
-```
-project=#
-```
-
-#### **Step 2: Check If the `chats` Table Exists**
 ```sql
-\dt
-```
-If `chats` is listed, the table exists.
-
-#### **Step 3: View the Table Schema**
-```sql
-\d chats
-```
-This will display the **columns** and **data types**.
-
-#### **Step 4: Retrieve All Stored Chats**
-```sql
-SELECT * FROM chats;
-```
-If there is data, it will display stored chats.
-
-#### **Step 5: Check for a Specific Chat**
-If you want to see a **specific chat**, filter by `id`:
-```sql
-SELECT * FROM chats WHERE id = 'your_chat_id';
+CREATE TABLE IF NOT EXISTS advanced_chats (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    last_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    pdf_path TEXT,
+    pdf_name TEXT,
+    pdf_uuid TEXT
+);
 ```
 
-#### **Step 6: Exit PostgreSQL**
-```sql
-\q
+Alternatively, you can **add the extra columns** to the `chats` table created in Stage 3 instead of creating a new table.
+
+#### **Step 1: Set Up Environment Variables**
+Store your `OPENAI_API_KEY` and **Database Credentials** in a `.env` file.
+
+Your `.env` file should look like this:
+
+```env
+OPENAI_API_KEY=YOUR-OPENAI-API-KEY
+DB_NAME=YOUR-DB-NAME
+DB_USER=YOUR-DB-USER
+DB_PASSWORD=YOUR-DB-PASSWORD
+DB_HOST=YOUR-DB-HOST
+DB_PORT=YOUR-DB-PORT
 ```
 
----
+#### **Step 2: Install Dependencies**
+To use **ChromaDB**, install it via `pip`. The necessary packages are listed in `requirements.txt`, so you can install everything by running:
 
-## **📌 Summary**
+```bash
+pip install -r requirements.txt
+```
 
-| Issue | Fix |
-|-------|-----|
-| `Connection refused` | Update `pg_hba.conf`, restart PostgreSQL |
-| `password authentication failed` | Set `md5` authentication and restart PostgreSQL |
-| `project` database does not exist | Create it using `CREATE DATABASE project;` |
-| Verify stored chat data | Use `SELECT * FROM chats;` inside PostgreSQL |
+#### **Step 3: Start ChromaDB**
+To enable retrieval, we need to start ChromaDB. Use the following command to start the Chroma server:
 
-✅ **Now, you have a fully working PostgreSQL setup for WSL and FastAPI!** 🚀
+```bash
+chroma run --path chromadb
+```
 
+Replace `/db_path` with the directory where you want to store the data, e.g., `chromadb`.
 
-stage-4 done!
+#### **Step 4: Start the Backend**
+Next, start the FastAPI backend:
+
+```bash
+uvicorn backend:app --reload --port 5000
+```
+
+> **Note:** Compared to the last stage, we have added the `--port 5000` parameter. Since ChromaDB uses port **8000** by default, this prevents a port conflict.
+
+#### **Step 5: Start the Streamlit App**
+Finally, run the Streamlit app:
+
+```bash
+streamlit run chatbot.py
+```
