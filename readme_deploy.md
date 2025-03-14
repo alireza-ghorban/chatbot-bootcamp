@@ -77,9 +77,9 @@ sudo systemctl enable postgresql
   ```
 
 ### 5. Clone the Repository
-- Clone the Stage 5 repository (replace `stage-5-link` with the actual GitHub URL):
+- Clone the Stage 4 repository (replace `stage-4-link` with the actual GitHub URL):
   ```bash
-  git clone stage-5-link
+  git clone stage-4-link
   ```
 - Navigate to the project directory:
   ```bash
@@ -93,9 +93,9 @@ sudo systemctl enable postgresql
   ```
 
 ### 7. Create a New Git Branch
-- Create and switch to a new branch for Stage 6:
+- Create and switch to a new branch for Stage 5:
   ```bash
-  git checkout -b stage-6
+  git checkout -b stage-5
   ```
 
 ### 8. Configure Environment Variables
@@ -219,12 +219,12 @@ Open three separate terminal sessions on the VM and activate the Conda environme
     ```
   - Push to the remote branch:
     ```bash
-    git push origin stage-6
+    git push origin stage-5
     ```
 
 ### 13. Create a Pull Request
 - Go to your GitHub repository.
-- Create a pull request from `stage-6` to `main`.
+- Create a pull request from `stage-5` to `main`.
 
 ### 14. Sync Local Main Branch
 - In VS Code (or locally):
