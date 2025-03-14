@@ -1,202 +1,249 @@
-Thank you for sharing the screenshot and the student’s issue regarding the chatbot application. The student is encountering a problem where the chatbot, instead of returning a normal text response, is displaying raw HTML content. Let’s analyze the issue based on the screenshot, the error description, and the code from Stage 4 (since Stage 5 is a deployment of Stage 4 on an Azure VM). I’ll break down the problem, identify the root cause, and provide a solution to ensure the chatbot returns plain text responses instead of raw HTML.
+Below is a rewritten and modified version of your text file in Markdown format, suitable for inclusion in the Stage 5 README file of your repository. I’ve organized it into sections, added clarity, corrected typos, improved instructions, and ensured consistency with the Stage 4 codebase (e.g., database schema and port settings). I’ve also incorporated best practices for readability and deployment guidance.
 
 ---
 
-### Problem Analysis
+# SDA Bootcamp Project - Stage 5: Deploying the Chatbot on an Azure VM
 
-#### Screenshot Details
-- The screenshot shows the Streamlit frontend of the chatbot application running on `localhost:8501`.
-- The user has a chat named "Ghadi" selected.
-- The user sends a message: "Hello".
-- The assistant’s response is raw HTML content:
-  ```html
-  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
-  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"> <--
-  This is a static HTML string template
-  to render errors. To edit this template, see appwserver/mrsparkle/lib/error.py -> <html
-  xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en"><head><meta http-equiv="content-type" content="text/html;
-  charset=utf-8" /><meta name="referrer" content="never" /><meta name="referrer"
-  content="no-referrer" /><link rel="shortcut icon" href="https://
-  US/static/ADD16D6FA0F328B0115F429B535E6F17B5E9E762DB427A4441937DEF6B.1/img/favicon.ico"
-/><title>Page not found! - Splunk><title> @font-face {font-family: "Splunk Sans"; src:
-  url('/static/fonts/proxima-regular-webfont.woff') format('woff'); font-weight: 400; font-style:
-  normal; }@font-face {font-family: "Splunk Mono"; src: url('/static/fonts/inconsolata-
-  ...
-  ```
-- This HTML content appears to be an error page, likely from a server-side issue, rather than the expected chatbot response.
+## Overview
+This stage involves deploying the RAG Chatbot with Chat History (from Stage 4) onto an Azure Virtual Machine (VM). The process includes setting up the VM environment with Miniconda, PostgreSQL, and the project dependencies, cloning the repository, configuring the environment, and running the application with Chroma, FastAPI, and Streamlit. Version control steps are included to manage changes and create a pull request.
 
-#### Code Context (Stage 4)
-- **Frontend (`chatbot.py`)**:
-  - The frontend sends a POST request to either `/chat/` (for regular chat) or `/rag_chat/` (for PDF-associated chats) based on whether a PDF is linked to the chat.
-  - The response is streamed and displayed using `st.write_stream(get_stream_response)`.
-  - The `get_stream_response` function decodes the streamed chunks as UTF-8:
-    ```python
-    def get_stream_response():
-        with requests.post(chat_taret_url, json=payload, headers=headers, stream=True) as r:
-            for chunk in r:
-                yield chunk.decode("utf-8")
-    response = st.write_stream(get_stream_response)
+## Prerequisites
+- An Azure account with permissions to create and manage VMs.
+- A public-private SSH key pair (e.g., `stage5-vm_key.pem`) for VM access.
+- The `.env` file from your WSL environment containing `OPENAI_API_KEY` and PostgreSQL credentials.
+
+## Step-by-Step Instructions
+
+### 1. Create and Configure the Azure VM
+Run the following bash script to set up the VM environment:
+```bash
+#!/bin/bash
+
+# Update package list and install required tools
+sudo apt update
+sudo apt install -y gnupg2 wget
+
+# Install Miniconda for the azureuser
+sudo -u azureuser mkdir -p /home/azureuser/miniconda3
+sudo -u azureuser wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /home/azureuser/miniconda3/miniconda.sh
+sudo -u azureuser bash /home/azureuser/miniconda3/miniconda.sh -b -u -p /home/azureuser/miniconda3
+sudo -u azureuser rm /home/azureuser/miniconda3/miniconda.sh
+
+# Add Miniconda to PATH
+echo 'export PATH="/home/azureuser/miniconda3/bin:$PATH"' | sudo -u azureuser tee -a /home/azureuser/.bashrc
+
+# Install PostgreSQL 16
+sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
+sudo apt update
+sudo apt install -y postgresql-16 postgresql-contrib-16 postgresql-client-16
+
+# Start and enable PostgreSQL service
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
+```
+
+### 2. Connect to the VM via SSH
+- Use VS Code’s SSH extension to connect to the VM using the private key (e.g., `stage5-vm_key.pem`).
+- If connection fails due to permissions:
+  - On Windows, run PowerShell as Administrator and adjust permissions:
+    ```powershell
+    icacls.exe "C:\Users\YourUsername\Downloads\stage5-vm_key.pem" /inheritance:r /grant:r "$($env:USERNAME):(R)"
     ```
-  - Since no PDF is associated with the "Ghadi" chat (no "Associate with: [pdf_name]" is shown in the UI), the request is sent to `/chat/`.
+  - Replace `YourUsername` with your actual Windows username.
 
-- **Backend (`backend.py`)**:
-  - The `/chat/` endpoint directly calls the OpenAI API and streams the response:
-    ```python
-    @app.post("/chat/")
-    async def chat(request: ChatRequest):
-        try:
-            stream = client.chat.completions.create(
-                model=model,
-                messages=request.messages,
-                stream=True,
-            )
-            def stream_response():
-                for chunk in stream:
-                    delta = chunk.choices[0].delta.content
-                    if delta:
-                        yield delta
-            return StreamingResponse(stream_response(), media_type="text/plain")
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-    ```
-  - The response is expected to be plain text (`media_type="text/plain"`), and the `delta.content` should contain the assistant’s message.
-
-#### Root Cause
-The assistant’s response is raw HTML instead of plain text, which suggests the following possibilities:
-
-1. **Backend Request Failure**:
-   - The request to `/chat/` (at `http://127.0.0.1:5000/chat/`) might be failing or reaching the wrong endpoint. The HTML content looks like an error page (e.g., a 404 "Page not found" from Splunk), indicating that the FastAPI backend might not be running correctly, or the request is being misrouted.
-   - Since the application is deployed on an Azure VM (Stage 5), there could be a networking issue, such as the FastAPI server not running on port 5000 or a firewall blocking the port.
-
-2. **Port Configuration Issue**:
-   - The frontend expects the backend at `http://127.0.0.1:5000`, but if the FastAPI server isn’t running on this port (or isn’t accessible), the request might be hitting another service (e.g., Splunk, which is mentioned in the HTML).
-   - In Stage 5, the instructions specify running FastAPI with `uvicorn backend:app --reload --port 5000`, but if this wasn’t executed properly, or if another service is occupying port 5000, the request would fail.
-
-3. **OpenAI API Issue**:
-   - If the FastAPI server is running but the OpenAI API call fails (e.g., invalid API key, rate limits), the `except` block in `/chat/` would raise an `HTTPException`. However, the HTML response doesn’t match FastAPI’s default error format, so this is less likely.
-
-4. **Streamlit Rendering Issue**:
-   - Streamlit’s `st.write_stream` expects plain text, but if the response contains HTML, it will render it as raw text rather than interpreting it as HTML. This aligns with the screenshot but doesn’t explain why HTML is being returned in the first place.
-
-#### Most Likely Cause
-The HTML error page mentioning "Splunk" and "Page not found" strongly suggests that the request to `http://127.0.0.1:5000/chat/` is not reaching the FastAPI backend. Instead, it’s hitting another service (possibly Splunk) running on the VM or a default error page from a misconfigured network setup. This could happen if:
-- The FastAPI server isn’t running on port 5000.
-- The port 5000 inbound rule wasn’t properly configured on the Azure VM.
-- Another service (e.g., Splunk) is running on port 5000, causing a conflict.
-
----
-
-### Solution
-
-To resolve the issue and ensure the chatbot returns plain text responses, we need to verify that the FastAPI backend is running correctly and accessible on the expected port. Here’s a step-by-step fix:
-
-#### 1. Verify FastAPI Server is Running
-- **On the Azure VM**:
-  - SSH into the VM using VS Code (as done in Stage 5).
-  - Navigate to the project directory where `backend.py` is located.
-  - Check if the FastAPI server is running:
-    ```bash
-    ps aux | grep uvicorn
-    ```
-  - If no process is found, start the FastAPI server:
-    ```bash
-    uvicorn backend:app --reload --port 5000
-    ```
-  - Ensure you’re in the Miniconda environment where the project dependencies are installed:
-    ```bash
-    source ~/miniconda3/bin/activate
-    ```
-
-#### 2. Check for Port Conflicts
-- Verify that port 5000 is not occupied by another service (e.g., Splunk):
+### 3. Configure the Shell Environment
+- Edit the `.bashrc` file to activate Miniconda automatically:
   ```bash
-  sudo netstat -tuln | grep 5000
+  nano /home/azureuser/.bashrc
   ```
-- If another service is using port 5000:
-  - Either stop the conflicting service (e.g., `sudo systemctl stop <service-name>` if it’s Splunk or another process).
-  - Or change the FastAPI port in both `backend.py` and `chatbot.py`:
-    - Update `chatbot.py`:
-      ```python
-      CHAT_URL = "http://127.0.0.1:5001/chat/"
-      RAG_CHAT_URL = "http://127.0.0.1:5001/rag_chat/"
-      ```
-    - Run FastAPI on port 5001:
-      ```bash
-      uvicorn backend:app --reload --port 5001
-      ```
+- Add the following line at the end of the file:
+  ```bash
+  source ~/miniconda3/bin/activate
+  ```
+- Save and exit (`Ctrl+O`, `Enter`, `Ctrl+X`), then reload the shell:
+  ```bash
+  source /home/azureuser/.bashrc
+  ```
 
-#### 3. Verify Inbound Port Rules on Azure VM
+### 4. Set Up the Conda Environment
+- Create a new Conda environment with Python 3.11:
+  ```bash
+  conda create -n stage5 python=3.11
+  ```
+- Activate the environment:
+  ```bash
+  conda activate stage5
+  ```
+
+### 5. Clone the Repository
+- Clone the Stage 5 repository (replace `stage-5-link` with the actual GitHub URL):
+  ```bash
+  git clone stage-5-link
+  ```
+- Navigate to the project directory:
+  ```bash
+  cd chatbot_project
+  ```
+
+### 6. Install Project Dependencies
+- Install the required packages:
+  ```bash
+  pip install -r requirements.txt
+  ```
+
+### 7. Create a New Git Branch
+- Create and switch to a new branch for Stage 6:
+  ```bash
+  git checkout -b stage-6
+  ```
+
+### 8. Configure Environment Variables
+- Create a `.env` file in the `chatbot_project` directory:
+  ```bash
+  nano .env
+  ```
+- Copy the contents of your WSL `.env` file (containing `OPENAI_API_KEY`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`) and paste them here. Example:
+  ```
+  OPENAI_API_KEY=your-openai-api-key
+  DB_NAME=your-db-name
+  DB_USER=your-db-user
+  DB_PASSWORD=your-db-password
+  DB_HOST=localhost
+  DB_PORT=5432
+  ```
+- Save and exit (`Ctrl+O`, `Enter`, `Ctrl+X`).
+
+### 9. Set Up the PostgreSQL Database
+- Access the PostgreSQL prompt as the `postgres` user:
+  ```bash
+  sudo -u postgres psql
+  ```
+- Change the `postgres` user password:
+  ```sql
+  ALTER USER postgres PASSWORD 'weclouddata';
+  ```
+- Create a new database:
+  ```sql
+  CREATE DATABASE project;
+  ```
+- Connect to the `project` database:
+  ```sql
+  \c project
+  ```
+- Create the `advanced_chats` table:
+  ```sql
+  CREATE TABLE IF NOT EXISTS advanced_chats (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      last_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      pdf_path TEXT,
+      pdf_name TEXT,
+      pdf_uuid TEXT
+  );
+  ```
+- Exit the PostgreSQL prompt:
+  ```sql
+  \q
+  ```
+
+### 10. Run the Application Services
+Open three separate terminal sessions on the VM and activate the Conda environment in each.
+
+#### Session 1: Start Chroma
+- Activate the environment:
+  ```bash
+  conda activate stage5
+  ```
+- Navigate to the project directory:
+  ```bash
+  cd /home/azureuser/chatbot_project
+  ```
+- Run Chroma (will use port 8000):
+  ```bash
+  chroma run --path /home/azureuser/chatbot_project/chroma_db/
+  ```
+
+#### Session 2: Start FastAPI Backend
+- Activate the environment:
+  ```bash
+  conda activate stage5
+  ```
+- Navigate to the project directory:
+  ```bash
+  cd /home/azureuser/chatbot_project
+  ```
+- Run the FastAPI server (will use port 5000):
+  ```bash
+  uvicorn backend:app --reload --port 5000
+  ```
+
+#### Session 3: Start Streamlit Frontend
+- Activate the environment:
+  ```bash
+  conda activate stage5
+  ```
+- Navigate to the project directory:
+  ```bash
+  cd /home/azureuser/chatbot_project
+  ```
+- Run the Streamlit app (will use port 8501):
+  ```bash
+  streamlit run chatbot.py
+  ```
+
+### 11. Configure Azure VM Networking
 - In the Azure Portal:
-  - Go to the VM’s "Networking" settings.
-  - Check the inbound security rules.
-  - Ensure port 5000 (or the new port, e.g., 5001) is open for HTTP traffic:
-    - Add a rule if missing:
-      - Port: 5000 (or 5001)
-      - Protocol: TCP
-      - Source: Any (or your IP for security)
-      - Action: Allow
-  - Also ensure port 8501 (Streamlit) and 8000 (Chroma) are open, as they were required in Stage 4.
+  - Navigate to the VM’s "Networking" settings.
+  - Add inbound security rules for ports 8000, 5000, and 8501:
+    - **Source**: Your IP address (e.g., "My IP Address").
+    - **Destination Port Ranges**: 8000, 5000, 8501.
+    - **Protocol**: TCP.
+    - **Action**: Allow.
+  - Save the rules.
 
-#### 4. Test the Backend Endpoint
-- From the VM, test the `/chat/` endpoint directly to confirm it’s working:
-  ```bash
-  curl -X POST "http://127.0.0.1:5000/chat/" -H "Content-Type: application/json" -d '{"messages": [{"role": "user", "content": "Hello"}]}'
-  ```
-- If this returns a plain text response (e.g., the assistant’s reply), the backend is working.
-- If it returns HTML or fails, there might be an issue with the OpenAI API key or the FastAPI setup:
-  - Check the `.env` file on the VM to ensure `OPENAI_API_KEY` is correct.
-  - Verify that the required packages (`fastapi`, `openai`, etc.) are installed in the Miniconda environment.
-
-#### 5. Restart Streamlit
-- If the backend is now working, restart the Streamlit app:
-  - Ensure Chroma is running:
+### 12. Commit and Push Changes
+- After verifying the application runs successfully:
+  - Check the status:
     ```bash
-    chroma run --path /db_path
+    git status
     ```
-  - Restart Streamlit:
+  - Stage all changes:
     ```bash
-    streamlit run chatbot.py
+    git add .
     ```
-- Test the chat again by sending a message like "Hello". The response should now be plain text.
-
-#### 6. Debug Streamlit Rendering (if needed)
-- If the response is still HTML but the `curl` test worked, the issue might be in how Streamlit processes the response. Ensure the `media_type` in the backend’s `StreamingResponse` is correctly set to `"text/plain"`, which it already is in the code. If the issue persists, log the raw response before rendering:
-  - Modify `chatbot.py` to debug:
-    ```python
-    def get_stream_response():
-        with requests.post(chat_taret_url, json=payload, headers=headers, stream=True) as r:
-            for chunk in r:
-                print(chunk)  # Debug: Print raw chunk
-                yield chunk.decode("utf-8")
+  - Commit with a meaningful message:
+    ```bash
+    git commit -m "Deployed Stage 5 chatbot on Azure VM with Chroma, FastAPI, and Streamlit"
     ```
-  - Check the logs to see what the backend is returning.
+  - Push to the remote branch:
+    ```bash
+    git push origin stage-6
+    ```
 
-#### 7. Commit and Push Changes (if any)
-- If you made changes (e.g., port adjustments), commit them:
-  ```bash
-  git add .
-  git commit -m "Fixed port conflict and HTML response issue"
-  git push origin stage-6
-  ```
-- Update the pull request on GitHub as needed.
+### 13. Create a Pull Request
+- Go to your GitHub repository.
+- Create a pull request from `stage-6` to `main`.
 
----
+### 14. Sync Local Main Branch
+- In VS Code (or locally):
+  - Switch to the `main` branch:
+    ```bash
+    git checkout main
+    ```
+  - Pull the latest changes:
+    ```bash
+    git pull
+    ```
 
-### Expected Outcome
-After following these steps, the chatbot should respond with plain text instead of raw HTML. For example, sending "Hello" should yield a response like "Hi! How can I assist you today?" instead of an HTML error page.
+## Troubleshooting
+- **Raw HTML Response**: If the chatbot displays HTML instead of text, ensure the FastAPI server is running on port 5000 and that inbound rules are correctly configured. Check for port conflicts with `sudo netstat -tuln | grep 5000` and adjust if necessary.
+- **Connection Issues**: Verify the VM’s public IP and SSH key permissions.
+- **Dependency Errors**: Ensure all packages in `requirements.txt` are installed in the `stage5` Conda environment.
 
----
+## Additional Notes
+- Replace `stage-5-link` with the actual GitHub repository URL.
+- Ensure the VM has sufficient resources (e.g., 2 vCPUs, 4 GB RAM) to run Chroma, FastAPI, and Streamlit concurrently.
+- The `.env` file should be added to `.gitignore` to avoid exposing sensitive credentials.
 
-### Additional Notes
-- **Splunk Reference**: The HTML mentions Splunk, which isn’t part of the project. This suggests that Splunk might be installed on the VM (possibly as part of a monitoring setup). If Splunk isn’t needed, consider removing it to avoid conflicts:
-  ```bash
-  sudo systemctl stop splunk
-  sudo systemctl disable splunk
-  ```
-- **Azure VM Networking**: If the issue persists after fixing the port, double-check the VM’s public IP and ensure the frontend is accessing the correct IP if not running locally (e.g., replace `127.0.0.1` with the VM’s public IP in `chatbot.py` URLs if accessing remotely).
-- **Diagram**: You mentioned providing a diagram of the stages, but the screenshot you shared is of the application UI. If you have a diagram showing the architecture (e.g., Stages 1–5), feel free to share it, and I can confirm the setup further.
-
----
-
-### Confirmation
-The issue should now be resolved. If the student still faces problems, please share any new error messages or logs (e.g., from the FastAPI server or Streamlit terminal) so I can assist further. Let me know if there’s anything else they need help with!
