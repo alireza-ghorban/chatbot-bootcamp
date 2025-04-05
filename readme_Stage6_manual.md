@@ -82,7 +82,7 @@
         [Service]
         Type=simple
         User=azureuser
-        WorkingDirectory=/home/azureuser/chatbot-bootcampt
+        WorkingDirectory=/home/azureuser/chatbot-bootcamp
         ExecStart=/home/azureuser/miniconda3/envs/stage6/bin/chroma run --path /home/azureuser/chatbot-bootcamp/mydata
         Restart=always
 
