@@ -4,7 +4,7 @@ set -e
 date
 echo "Updating Python application on VM..."
 
-APP_DIR="/home/azureuser/chatbot"
+APP_DIR="/home/azureuser/chatbot-bootcamp"
 REPO_URL="github.com/alireza-ghorban/chatbot-bootcamp.git"
 BRANCH="stage-6"
 GITHUB_TOKEN=$GITHUB_TOKEN
